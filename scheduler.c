@@ -7,9 +7,10 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sched.h>
-
+#define q_size 30
 static int now_time,index,count,last_time,nextprocess;
-
+int queue[q_size];
+static int top, end;
 void assign_cpu(int pid,int core){
 	cpu_set_t mask;
 	CPU_ZERO(&mask);
@@ -46,11 +47,27 @@ int priority(int pid,int mode){
 	}
 	return ret;
 }
+
+void push(int index){
+	queue[top] = index;
+	top = (top + 1) % q_size;
+}
+
+int pop(){
+	int a = queue[end];
+	end = (end + 1) % q_size;
+	return a;
+}
+
+int is_empty(){
+	return (top == end);
+}
 int cpu_scheduling(Proc *p,int policy,int N){
 	assign_cpu(getpid(),0);
 	priority(getpid(),1);
 	// Initial scheduler
 	now_time = count = nextprocess = 0;
+	top = end = 0;
 	index = -1; //no one is running
 	while(1){
 		/*check if process finish*/
@@ -64,6 +81,7 @@ int cpu_scheduling(Proc *p,int policy,int N){
 		}
 		/*check any process ready*/
 		while(p[nextprocess].t_ready == now_time && nextprocess < N){
+			if(policy == RR) push(nextprocess);
 			p[nextprocess].pid = p_exec(p[nextprocess]);
 			priority(p[nextprocess].pid,0); //block first
 			nextprocess++;
@@ -81,16 +99,18 @@ int cpu_scheduling(Proc *p,int policy,int N){
 			}
 			else if(policy == RR){
 				if(index == -1){
-					for(int i = 0; i < N; i++){
-						if(p[i].pid != -1 && p[i].t_exec > 0){
-							next = i;
-							break;
-						}
+					if(!is_empty()){
+						next = pop();
 					}
 				}
-				else if((now_time - last_time) % time_slice == 0){
-					next = (index + 1) % N;
-					while(p[next].pid == -1 || p[next].t_exec <= 0) next = (next + 1) % N;
+				else if((now_time-last_time) % time_slice == 0){
+					if(is_empty()){
+						next = index;
+					}
+					else{
+						next = pop();
+						push(index);
+					}
 				}
 				else next = index;
 			}
